@@ -88,6 +88,9 @@ int count_nodes(Node *root) {
  */
 void fs_init(FrameStack *s) {
     // TODO: Implement this function
+    s->capacity = 16;
+    s->size = 0;
+    s->frames = (Frame *)malloc(sizeof(Frame) * s->capacity);
 }
 
 /* TODO 6: Implement fs_push
@@ -98,6 +101,19 @@ void fs_init(FrameStack *s) {
  */
 void fs_push(FrameStack *s, Node *node, int answeredYes) {
     // TODO: Implement this function
+    if (s->size >= s->capacity) {
+        int newcap = s->capacity * 2;
+        Frame *newframes = (Frame *)realloc(s->frames, sizeof(Frame) * newcap);
+        if (!newframes) {
+            // Allocation failed; do not change state
+            return;
+        }
+        s->frames = newframes;
+        s->capacity = newcap;
+    }
+    s->frames[s->size].node = node;
+    s->frames[s->size].answeredYes = answeredYes;
+    s->size += 1;
 }
 
 /* TODO 7: Implement fs_pop
@@ -107,8 +123,10 @@ void fs_push(FrameStack *s, Node *node, int answeredYes) {
  */
 Frame fs_pop(FrameStack *s) {
     Frame dummy = {NULL, -1};
+    if (s->size == 0) return dummy;
+    s->size -= 1;
+    return s->frames[s->size];
     // TODO: Implement this function
-    return dummy;
 }
 
 /* TODO 8: Implement fs_empty
@@ -116,6 +134,7 @@ Frame fs_pop(FrameStack *s) {
  */
 int fs_empty(FrameStack *s) {
     // TODO: Implement this function
+    return s->size == 0 ? 1 : 0;
     return 1;
 }
 
@@ -126,6 +145,10 @@ int fs_empty(FrameStack *s) {
  */
 void fs_free(FrameStack *s) {
     // TODO: Implement this function
+    free(s->frames);
+    s->frames = NULL;
+    s->size = 0;
+    s->capacity = 0;
 }
 
 /* ========== Edit Stack (for undo/redo) ========== */
