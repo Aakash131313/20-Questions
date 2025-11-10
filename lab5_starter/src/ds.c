@@ -158,6 +158,9 @@ void fs_free(FrameStack *s) {
  */
 void es_init(EditStack *s) {
     // TODO: Implement this function
+    s->capacity = 16;
+    s->size = 0;
+    s->edits = (Edit *)malloc(sizeof(Edit) * s->capacity);
 }
 
 /* TODO 11: Implement es_push
@@ -167,15 +170,29 @@ void es_init(EditStack *s) {
  */
 void es_push(EditStack *s, Edit e) {
     // TODO: Implement this function
+    if (s->size >= s->capacity) {
+        int newcap = s->capacity * 2;
+        Edit *newedits = (Edit *)realloc(s->edits, sizeof(Edit) * newcap);
+        if (!newedits) {
+            return;
+        }
+        s->edits = newedits;
+        s->capacity = newcap;
+    }
+    s->edits[s->size] = e;
+    s->size += 1;
 }
 
 /* TODO 12: Implement es_pop
  * Similar to fs_pop but for Edit structs
  */
 Edit es_pop(EditStack *s) {
-    Edit dummy = {0};
+    Edit dummy = (Edit){0};
+    if (s->size == 0) return dummy;
+    s->size -= 1;
+    return s->edits[s->size];
     // TODO: Implement this function
-    return dummy;
+    
 }
 
 /* TODO 13: Implement es_empty
@@ -183,7 +200,7 @@ Edit es_pop(EditStack *s) {
  */
 int es_empty(EditStack *s) {
     // TODO: Implement this function
-    return 1;
+    return s->size == 0 ? 1 : 0;
 }
 
 /* TODO 14: Implement es_clear
@@ -192,6 +209,8 @@ int es_empty(EditStack *s) {
  */
 void es_clear(EditStack *s) {
     // TODO: Implement this function
+    s->size = 0;
+
 }
 
 void es_free(EditStack *s) {
