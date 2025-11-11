@@ -335,7 +335,24 @@ void q_free(Queue *q) {
  */
 char *canonicalize(const char *s) {
     // TODO: Implement this function
-    return NULL;
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *out = (char *)malloc(len + 1);
+    if (!out) return NULL;
+
+    size_t j = 0;
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char c = (unsigned char)s[i];
+        if (isalnum(c)) {
+            out[j++] = (char)tolower(c);
+        } else if (isspace(c)) {
+            out[j++] = '_';
+        } else {
+            /* skip punctuation and other symbols */
+        }
+    }
+    out[j] = '\0';
+    return out;
 }
 
 /* TODO 21: Implement h_hash (djb2 algorithm)
@@ -346,7 +363,12 @@ char *canonicalize(const char *s) {
  */
 unsigned h_hash(const char *s) {
     // TODO: Implement this function
-    return 0;
+    unsigned hash = 5381u;
+    if (!s) return hash;
+    for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
+        hash = ((hash << 5) + hash) + *p;
+    }
+    return hash;
 }
 
 /* TODO 22: Implement h_init
@@ -356,6 +378,9 @@ unsigned h_hash(const char *s) {
  */
 void h_init(Hash *h, int nbuckets) {
     // TODO: Implement this function
+    h->nbuckets = nbuckets > 0 ? nbuckets : 1;
+    h->size = 0;
+    h->buckets = (Entry **)calloc((size_t)h->nbuckets, sizeof(Entry *));
 }
 
 /* TODO 23: Implement h_put
@@ -378,7 +403,54 @@ void h_init(Hash *h, int nbuckets) {
  */
 int h_put(Hash *h, const char *key, int animalId) {
     // TODO: Implement this function
-    return 0;
+    if (!h || !key) return 0;
+    unsigned idx = h_hash(key) % (unsigned)h->nbuckets;
+
+    Entry *e = h->buckets[idx];
+    while (e) {
+        if (strcmp(e->key, key) == 0) {
+            // check for duplicate
+            for (int i = 0; i < e->vals.count; ++i) {
+                if (e->vals.ids[i] == animalId) {
+                    return 0; // no change
+                }
+            }
+            // add new id
+            if (e->vals.count >= e->vals.capacity) {
+                int newcap = e->vals.capacity > 0 ? e->vals.capacity * 2 : 4;
+                int *newids = (int *)realloc(e->vals.ids, sizeof(int) * newcap);
+                if (!newids) return 0;
+                e->vals.ids = newids;
+                e->vals.capacity = newcap;
+            }
+            e->vals.ids[e->vals.count++] = animalId;
+            return 1;
+        }
+        e = e->next;
+    }
+
+    // not found, create new entry
+    Entry *ne = (Entry *)malloc(sizeof(Entry));
+    if (!ne) return 0;
+    ne->key = strdup(key);
+    if (!ne->key) {
+        free(ne);
+        return 0;
+    }
+    ne->vals.ids = (int *)malloc(sizeof(int) * 4);
+    if (!ne->vals.ids) {
+        free(ne->key);
+        free(ne);
+        return 0;
+    }
+    ne->vals.capacity = 4;
+    ne->vals.count = 1;
+    ne->vals.ids[0] = animalId;
+
+    ne->next = h->buckets[idx];
+    h->buckets[idx] = ne;
+    h->size += 1;
+    return 1;
 }
 
 /* TODO 24: Implement h_contains
@@ -392,6 +464,18 @@ int h_put(Hash *h, const char *key, int animalId) {
  */
 int h_contains(const Hash *h, const char *key, int animalId) {
     // TODO: Implement this function
+    if (!h || !key) return 0;
+    unsigned idx = h_hash(key) % (unsigned)h->nbuckets;
+    Entry *e = h->buckets[idx];
+    while (e) {
+        if (strcmp(e->key, key) == 0) {
+            for (int i = 0; i < e->vals.count; ++i) {
+                if (e->vals.ids[i] == animalId) return 1;
+            }
+            return 0;
+        }
+        e = e->next;
+    }
     return 0;
 }
 
@@ -412,7 +496,17 @@ int h_contains(const Hash *h, const char *key, int animalId) {
  */
 int *h_get_ids(const Hash *h, const char *key, int *outCount) {
     // TODO: Implement this function
-    *outCount = 0;
+   if (outCount) *outCount = 0;
+    if (!h || !key) return NULL;
+    unsigned idx = h_hash(key) % (unsigned)h->nbuckets;
+    Entry *e = h->buckets[idx];
+    while (e) {
+        if (strcmp(e->key, key) == 0) {
+            if (outCount) *outCount = e->vals.count;
+            return e->vals.ids;
+        }
+        e = e->next;
+    }
     return NULL;
 }
 
@@ -431,4 +525,21 @@ int *h_get_ids(const Hash *h, const char *key, int *outCount) {
  */
 void h_free(Hash *h) {
     // TODO: Implement this function
+    if (!h || !h->buckets) {
+        return;
+    }
+    for (int i = 0; i < h->nbuckets; ++i) {
+        Entry *e = h->buckets[i];
+        while (e) {
+            Entry *next = e->next;
+            free(e->key);
+            free(e->vals.ids);
+            free(e);
+            e = next;
+        }
+    }
+    free(h->buckets);
+    h->buckets = NULL;
+    h->size = 0;
+    h->nbuckets = 0;
 }
