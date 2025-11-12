@@ -30,7 +30,38 @@ extern Node *g_root;
 int check_integrity() {
     // TODO: Implement this function
     // Use the Queue functions you implemented
-    return 1;
+    if (g_root == NULL) return 1; //empty is valid
+
+    Queue q; //BFS queue
+    q_init(&q); //initializes
+    q_enqueue(&q, g_root, 0); //start at root
+
+    int valid = 1; //assumes valid
+
+    while (!q_empty(&q)) { //BFS
+        Node *n = NULL;
+        int dummy = 0;
+        if (!q_dequeue(&q, &n, &dummy)) break;  // defensive
+
+        if (n == NULL) { valid = 0; break; } //null node so invalid
+
+        if (n->isQuestion) { //question not must have both or invalid
+            if (n->yes == NULL || n->no == NULL) {
+                valid = 0;
+                break;
+            }
+            q_enqueue(&q, n->yes, 0); //goes to yes and no
+            q_enqueue(&q, n->no, 0);
+        } else {
+            if (n->yes != NULL || n->no != NULL) { //leaves have no kids so invalid and stop early
+                valid = 0;
+                break;
+            }
+        }
+    }
+
+    q_free(&q); //cleans the queue and returns the valid result
+    return valid;
 }
 
 typedef struct PathNode {

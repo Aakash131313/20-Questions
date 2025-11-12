@@ -5,6 +5,31 @@
 #include <ctype.h>
 #include "lab5.h"
 
+static int edit_is_applied(const Edit *e) {
+    if (e->newQuestion == NULL) return 0; //if no new node, it just returns nothing
+    if (e->parent == NULL) return g_root == e->newQuestion; //compares it with the root if there is no parent
+    if (e->wasYesChild)    return e->parent->yes == e->newQuestion; //if it was a yes side child, compares it with that
+    return e->parent->no  == e->newQuestion; //all other cases covered so compares no-child
+}
+
+static void free_detached_edit(Edit *e) {
+    // frees if it is detached from an undo - kept getting valgrind errors
+    if (!edit_is_applied(e)) {
+        // if newQuestion was detached by undo
+        if (e->newQuestion) { //frees the newQuestion subtree
+            // its other child (newLeaf) is ours to free explicitly
+            if (e->newLeaf) { //frees the new created leaf
+                if (e->newLeaf->text) free(e->newLeaf->text);
+                free(e->newLeaf); //frees every edited part of new leaf and the the leaf node itself
+                e->newLeaf = NULL;
+            }
+            if (e->newQuestion->text) free(e->newQuestion->text); //goes back and frees the question
+            free(e->newQuestion);
+            e->newQuestion = NULL;
+        }
+    }
+}
+
 /* ========== Node Functions ========== */
 
 /* TODO 1: Implement create_question_node
@@ -16,16 +41,16 @@
  */
 Node *create_question_node(const char *question) {
     // TODO: Implement this function
-    if (!question) return NULL;
-    Node *n = (Node *)malloc(sizeof(Node));
-    if (!n) return NULL;
-    n->text = strdup(question);
-    if (!n->text) {
+    if (!question) return NULL;  //First check to see if valid question
+    Node *n = (Node *)malloc(sizeof(Node)); //allocate size for a node
+    if (!n) return NULL; //if malloc fails, returns NULL
+    n->text = strdup(question); //copies question into the text of the node
+    if (!n->text) { //if text ptr doesn't exist it frees the node to avoid errors in empty pointers
         free(n);
         return NULL;
     }
-    n->isQuestion = 1;
-    n->yes = NULL;
+    n->isQuestion = 1; //sets the node to question mode
+    n->yes = NULL; //initialize yes and no ptrs and returns the node
     n->no = NULL;
     return n;
 }
@@ -37,15 +62,15 @@ Node *create_question_node(const char *question) {
 Node *create_animal_node(const char *animal) {
     // TODO: Implement this function
     if (!animal) return NULL;
-    Node *n = (Node *)malloc(sizeof(Node));
+    Node *n = (Node *)malloc(sizeof(Node)); //allocates memory
     if (!n) return NULL;
-    n->text = strdup(animal);
+    n->text = strdup(animal); //puts the animal input into the text of the node
     if (!n->text) {
-        free(n);
+        free(n); //if strdup fails it frees it so nomemory leaks
         return NULL;
     }
-    n->isQuestion = 0;
-    n->yes = NULL;
+    n->isQuestion = 0; //sets it to animal node
+    n->yes = NULL; //initializes its children
     n->no = NULL;
     return n;
 }
@@ -61,8 +86,8 @@ Node *create_animal_node(const char *animal) {
  */
 void free_tree(Node *node) {
     // TODO: Implement this function
-    if (!node) return;
-    free_tree(node->yes);
+    if (!node) return; //base case if node doesn't exist
+    free_tree(node->yes); //frees children, then the text, then the node itself
     free_tree(node->no);
     free(node->text);
     free(node);
@@ -74,6 +99,7 @@ void free_tree(Node *node) {
  */
 int count_nodes(Node *root) {
     // TODO: Implement this function
+    //recursively counts the nodes going down the yes first and then the nos
     if (!root) return 0;
     return 1 + count_nodes(root->yes) + count_nodes(root->no);
     return 0;
@@ -88,9 +114,9 @@ int count_nodes(Node *root) {
  */
 void fs_init(FrameStack *s) {
     // TODO: Implement this function
-    s->capacity = 16;
-    s->size = 0;
-    s->frames = (Frame *)malloc(sizeof(Frame) * s->capacity);
+    s->capacity = 16; //initializes capacity to 16
+    s->size = 0; //initializes to empty stack
+    s->frames = (Frame *)malloc(sizeof(Frame) * s->capacity); //allocates memory for the stack
 }
 
 /* TODO 6: Implement fs_push
@@ -101,19 +127,19 @@ void fs_init(FrameStack *s) {
  */
 void fs_push(FrameStack *s, Node *node, int answeredYes) {
     // TODO: Implement this function
-    if (s->size >= s->capacity) {
-        int newcap = s->capacity * 2;
+    if (s->size >= s->capacity) { //if it needs to grow, it can
+        int newcap = s->capacity * 2; //allocating twice capacity if needed
         Frame *newframes = (Frame *)realloc(s->frames, sizeof(Frame) * newcap);
-        if (!newframes) {
+        if (!newframes) { //if it doesn't allocate then just return
             // Allocation failed; do not change state
             return;
         }
-        s->frames = newframes;
+        s->frames = newframes; //change to the new allocated memory and capacity
         s->capacity = newcap;
     }
-    s->frames[s->size].node = node;
-    s->frames[s->size].answeredYes = answeredYes;
-    s->size += 1;
+    s->frames[s->size].node = node; //sets the node
+    s->frames[s->size].answeredYes = answeredYes; //sets the flag
+    s->size += 1; //grows the size of the stack
 }
 
 /* TODO 7: Implement fs_pop
@@ -122,10 +148,10 @@ void fs_push(FrameStack *s, Node *node, int answeredYes) {
  * Note: No need to check if empty - caller should use fs_empty() first
  */
 Frame fs_pop(FrameStack *s) {
-    Frame dummy = {NULL, -1};
-    if (s->size == 0) return dummy;
-    s->size -= 1;
-    return s->frames[s->size];
+    Frame dummy = {NULL, -1}; //if empty
+    if (s->size == 0) return dummy; //return something if stack empty
+    s->size -= 1; //reduce size
+    return s->frames[s->size]; //return the top frame
     // TODO: Implement this function
 }
 
@@ -134,8 +160,7 @@ Frame fs_pop(FrameStack *s) {
  */
 int fs_empty(FrameStack *s) {
     // TODO: Implement this function
-    return s->size == 0 ? 1 : 0;
-    return 1;
+    return s->size == 0 ? 1 : 0; //1 if its empty, 0 if not
 }
 
 /* TODO 9: Implement fs_free
@@ -145,9 +170,9 @@ int fs_empty(FrameStack *s) {
  */
 void fs_free(FrameStack *s) {
     // TODO: Implement this function
-    free(s->frames);
-    s->frames = NULL;
-    s->size = 0;
+    free(s->frames); //frees the buffer
+    s->frames = NULL; //sets to null to avoid errors down the line
+    s->size = 0; //resets the size and capacity
     s->capacity = 0;
 }
 
@@ -158,9 +183,9 @@ void fs_free(FrameStack *s) {
  */
 void es_init(EditStack *s) {
     // TODO: Implement this function
-    s->capacity = 16;
-    s->size = 0;
-    s->edits = (Edit *)malloc(sizeof(Edit) * s->capacity);
+    s->capacity = 16; //initialize capacity
+    s->size = 0; //empty the stack
+    s->edits = (Edit *)malloc(sizeof(Edit) * s->capacity); //allocates memory for edit stack
 }
 
 /* TODO 11: Implement es_push
@@ -170,13 +195,13 @@ void es_init(EditStack *s) {
  */
 void es_push(EditStack *s, Edit e) {
     // TODO: Implement this function
-    if (s->size >= s->capacity) {
+    if (s->size >= s->capacity) { //if it needs to grow, realloc with double the capacity
         int newcap = s->capacity * 2;
         Edit *newedits = (Edit *)realloc(s->edits, sizeof(Edit) * newcap);
-        if (!newedits) {
+        if (!newedits) {  //just in case the realloc doesn't wok
             return;
         }
-        s->edits = newedits;
+        s->edits = newedits; //change to the new buffer, capacity, store the edit and grow the size
         s->capacity = newcap;
     }
     s->edits[s->size] = e;
@@ -187,9 +212,9 @@ void es_push(EditStack *s, Edit e) {
  * Similar to fs_pop but for Edit structs
  */
 Edit es_pop(EditStack *s) {
-    Edit dummy = (Edit){0};
-    if (s->size == 0) return dummy;
-    s->size -= 1;
+    Edit dummy = (Edit){0}; //if empty
+    if (s->size == 0) return dummy; //returns dummy if its empty = no error
+    s->size -= 1; //reduces size and returns the top edit frame 
     return s->edits[s->size];
     // TODO: Implement this function
     
@@ -200,7 +225,7 @@ Edit es_pop(EditStack *s) {
  */
 int es_empty(EditStack *s) {
     // TODO: Implement this function
-    return s->size == 0 ? 1 : 0;
+    return s->size == 0 ? 1 : 0; //1 if empty, 0 if not
 }
 
 /* TODO 14: Implement es_clear
@@ -209,19 +234,26 @@ int es_empty(EditStack *s) {
  */
 void es_clear(EditStack *s) {
     // TODO: Implement this function
-    s->size = 0;
+    for (int i = 0; i < s->size; i++) { //goes through all stored edits
+        free_detached_edit(&s->edits[i]); //frees if detached
+                                          // this is what made the difference for valgrind errors
+    }
+    s->size = 0; //clears and sets size to 0
 
 }
 
 void es_free(EditStack *s) {
-    free(s->edits);
+    for (int i = 0; i < s->size; i++) { //frees any detached edits from undos so no mem leaks
+        free_detached_edit(&s->edits[i]);
+    }
+    free(s->edits); //frees buffer, resets size and capacity
     s->edits = NULL;
     s->size = 0;
     s->capacity = 0;
 }
 
 void free_edit_stack(EditStack *s) {
-    es_free(s);
+    es_free(s); //free stack
 }
 
 /* ========== Queue (for BFS traversal) ========== */
@@ -232,7 +264,7 @@ void free_edit_stack(EditStack *s) {
  */
 void q_init(Queue *q) {
     // TODO: Implement this function
-    q->front = NULL;
+    q->front = NULL; //initializes queue front, rear, and size
     q->rear = NULL;
     q->size = 0;
 }
@@ -250,20 +282,20 @@ void q_init(Queue *q) {
  */
 void q_enqueue(Queue *q, Node *node, int id) {
     // TODO: Implement this function
-    QueueNode *qn = (QueueNode *)malloc(sizeof(QueueNode));
-    if (!qn) return;
-    qn->treeNode = node;
-    qn->id = id;
-    qn->next = NULL;
+    QueueNode *qn = (QueueNode *)malloc(sizeof(QueueNode)); //allocates memory for the new node
+    if (!qn) return; //just in case
+    qn->treeNode = node; //sets the node
+    qn->id = id; //sets the id
+    qn->next = NULL; //added to the back of queue so next pointer is null
 
-    if (q->rear == NULL) {
-        q->front = qn;
-        q->rear = qn;
+    if (q->rear == NULL) { //if its empty
+        q->front = qn; //the head is the new node
+        q->rear = qn; //the tail is the new node
     } else {
-        q->rear->next = qn;
-        q->rear = qn;
+        q->rear->next = qn; //if not it is linked at the tail 
+        q->rear = qn; //the tail to this node
     }
-    q->size += 1;
+    q->size += 1; //increase size of the queue
 }
 
 /* TODO 17: Implement q_dequeue
@@ -278,6 +310,10 @@ void q_enqueue(Queue *q, Node *node, int id) {
  */
 int q_dequeue(Queue *q, Node **node, int *id) {
     // TODO: Implement this function
+
+    //takes the head temporarily, outputs the node, outputs the id, advances the hea
+    //checks if queue is empty and clears the tail if so, then frees the old head, decreases the size
+    //and returns 1 if it succeeds
     if (q->front == NULL) return 0;
     QueueNode *tmp = q->front;
     if (node) *node = tmp->treeNode;
@@ -296,7 +332,7 @@ int q_dequeue(Queue *q, Node **node, int *id) {
  */
 int q_empty(Queue *q) {
     // TODO: Implement this function
-    return q->size == 0 ? 1 : 0;
+    return q->size == 0 ? 1 : 0; //1 if empty
     
 }
 
@@ -306,9 +342,9 @@ int q_empty(Queue *q) {
  */
 void q_free(Queue *q) {
     // TODO: Implement this function
-    Node *n = NULL;
-    int id = 0;
-    while (q_dequeue(q, &n, &id)) {
+    Node *n = NULL; //temporary node pointer
+    int id = 0; //id to set all of the queue to
+    while (q_dequeue(q, &n, &id)) { //dequeues everything with NULL and id=0
         /* nothing else to do */
     }
 }
@@ -337,9 +373,10 @@ char *canonicalize(const char *s) {
     // TODO: Implement this function
     if (!s) return NULL;
     size_t len = strlen(s);
-    char *out = (char *)malloc(len + 1);
+    char *out = (char *)malloc(len + 1); //worst-case memory allocation
     if (!out) return NULL;
-
+    //writes the index, scans the input, reads the bytes and keeps letters and digits
+    //makes a lowercase copy and maps spaces with underscore
     size_t j = 0;
     for (size_t i = 0; i < len; ++i) {
         unsigned char c = (unsigned char)s[i];
@@ -351,7 +388,7 @@ char *canonicalize(const char *s) {
             /* skip punctuation and other symbols */
         }
     }
-    out[j] = '\0';
+    out[j] = '\0'; //terminator
     return out;
 }
 
@@ -363,10 +400,10 @@ char *canonicalize(const char *s) {
  */
 unsigned h_hash(const char *s) {
     // TODO: Implement this function
-    unsigned hash = 5381u;
+    unsigned hash = 5381u; //this is the seed
     if (!s) return hash;
     for (const unsigned char *p = (const unsigned char *)s; *p; ++p) {
-        hash = ((hash << 5) + hash) + *p;
+        hash = ((hash << 5) + hash) + *p; //hash *33 +c
     }
     return hash;
 }
@@ -378,9 +415,9 @@ unsigned h_hash(const char *s) {
  */
 void h_init(Hash *h, int nbuckets) {
     // TODO: Implement this function
-    h->nbuckets = nbuckets > 0 ? nbuckets : 1;
-    h->size = 0;
-    h->buckets = (Entry **)calloc((size_t)h->nbuckets, sizeof(Entry *));
+    h->nbuckets = nbuckets > 0 ? nbuckets : 1; //bucket counts
+    h->size = 0; //initializes it
+    h->buckets = (Entry **)calloc((size_t)h->nbuckets, sizeof(Entry *)); //zeroes the buckets
 }
 
 /* TODO 23: Implement h_put
@@ -406,8 +443,8 @@ int h_put(Hash *h, const char *key, int animalId) {
     if (!h || !key) return 0;
     unsigned idx = h_hash(key) % (unsigned)h->nbuckets;
 
-    Entry *e = h->buckets[idx];
-    while (e) {
+    Entry *e = h->buckets[idx]; //head of chain
+    while (e) { //searches chain for key, if present no change
         if (strcmp(e->key, key) == 0) {
             // check for duplicate
             for (int i = 0; i < e->vals.count; ++i) {
@@ -415,7 +452,7 @@ int h_put(Hash *h, const char *key, int animalId) {
                     return 0; // no change
                 }
             }
-            // add new id
+            // add new id and checks if need more memory
             if (e->vals.count >= e->vals.capacity) {
                 int newcap = e->vals.capacity > 0 ? e->vals.capacity * 2 : 4;
                 int *newids = (int *)realloc(e->vals.ids, sizeof(int) * newcap);
@@ -423,13 +460,14 @@ int h_put(Hash *h, const char *key, int animalId) {
                 e->vals.ids = newids;
                 e->vals.capacity = newcap;
             }
-            e->vals.ids[e->vals.count++] = animalId;
+            e->vals.ids[e->vals.count++] = animalId; //adds id
             return 1;
         }
-        e = e->next;
+        e = e->next; //next entry
     }
 
     // not found, create new entry
+    //copies the key, sets capacity and stores id
     Entry *ne = (Entry *)malloc(sizeof(Entry));
     if (!ne) return 0;
     ne->key = strdup(key);
@@ -446,7 +484,7 @@ int h_put(Hash *h, const char *key, int animalId) {
     ne->vals.capacity = 4;
     ne->vals.count = 1;
     ne->vals.ids[0] = animalId;
-
+    //inserts at the head, updates bucket, adds to size
     ne->next = h->buckets[idx];
     h->buckets[idx] = ne;
     h->size += 1;
@@ -464,19 +502,19 @@ int h_put(Hash *h, const char *key, int animalId) {
  */
 int h_contains(const Hash *h, const char *key, int animalId) {
     // TODO: Implement this function
-    if (!h || !key) return 0;
+    if (!h || !key) return 0; //bucketindex below
     unsigned idx = h_hash(key) % (unsigned)h->nbuckets;
     Entry *e = h->buckets[idx];
     while (e) {
         if (strcmp(e->key, key) == 0) {
             for (int i = 0; i < e->vals.count; ++i) {
-                if (e->vals.ids[i] == animalId) return 1;
+                if (e->vals.ids[i] == animalId) return 1; //if found
             }
-            return 0;
+            return 0; //key found, id not found
         }
         e = e->next;
     }
-    return 0;
+    return 0; //not found
 }
 
 /* TODO 25: Implement h_get_ids
@@ -500,14 +538,14 @@ int *h_get_ids(const Hash *h, const char *key, int *outCount) {
     if (!h || !key) return NULL;
     unsigned idx = h_hash(key) % (unsigned)h->nbuckets;
     Entry *e = h->buckets[idx];
-    while (e) {
+    while (e) { //scans the table, if key matches returns the array
         if (strcmp(e->key, key) == 0) {
             if (outCount) *outCount = e->vals.count;
             return e->vals.ids;
         }
         e = e->next;
     }
-    return NULL;
+    return NULL; //not found
 }
 
 /* TODO 26: Implement h_free
@@ -528,7 +566,8 @@ void h_free(Hash *h) {
     if (!h || !h->buckets) {
         return;
     }
-    for (int i = 0; i < h->nbuckets; ++i) {
+    for (int i = 0; i < h->nbuckets; ++i) { //walks through the chain, saves the next to keep going, frees the key
+        //frees id buffer, and entry
         Entry *e = h->buckets[i];
         while (e) {
             Entry *next = e->next;
@@ -538,7 +577,7 @@ void h_free(Hash *h) {
             e = next;
         }
     }
-    free(h->buckets);
+    free(h->buckets); //free the whole array
     h->buckets = NULL;
     h->size = 0;
     h->nbuckets = 0;
